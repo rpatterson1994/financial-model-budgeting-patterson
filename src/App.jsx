@@ -348,24 +348,29 @@ function Section({ title, icon, children, defaultOpen = true, badge }) {
 // ============================================================
 
 function MiniBar({ data, height = 200 }) {
+  if (!data || data.length === 0) return null;
   const maxVal = Math.max(...data.map(d => Math.abs(d.value)), 1);
-  const bw = Math.min(32, (100 / data.length) * 0.7);
+  const barAreaH = height - 30; // reserve 30px for labels
   return (
-    <div style={{ position: "relative", height, width: "100%", marginTop: 8 }}>
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 1, background: "var(--c-border)" }} />
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", height: "85%" }}>
-        {data.map((d, i) => (
-          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: `${bw}%` }}>
-            <div style={{
-              width: "100%", maxWidth: 28, borderRadius: "5px 5px 2px 2px",
-              height: `${Math.max((Math.abs(d.value) / maxVal) * 85, 2)}%`,
-              background: d.highlight ? "var(--c-accent)" : "var(--c-bar)", opacity: 0.9, transition: "height .4s",
-            }} />
-          </div>
-        ))}
+    <div style={{ width: "100%", marginTop: 8 }}>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", height: barAreaH }}>
+        {data.map((d, i) => {
+          const barH = Math.max((Math.abs(d.value) / maxVal) * barAreaH * 0.9, 3);
+          return (
+            <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, padding: "0 2px" }}>
+              <div style={{ fontSize: 9, color: "var(--c-hint)", marginBottom: 3, fontWeight: 600 }}>{d.value > 0 ? fmtFull(d.value) : ""}</div>
+              <div style={{
+                width: "100%", maxWidth: 28, borderRadius: "5px 5px 2px 2px",
+                height: barH,
+                background: d.highlight ? "var(--c-accent)" : "var(--c-bar)", opacity: 0.9, transition: "height .4s",
+              }} />
+            </div>
+          );
+        })}
       </div>
-      <div style={{ display: "flex", justifyContent: "space-around", marginTop: 6 }}>
-        {data.map((d, i) => <div key={i} style={{ fontSize: 10, color: "var(--c-hint)", textAlign: "center", width: `${bw}%` }}>{d.label}</div>)}
+      <div style={{ height: 1, background: "var(--c-border)", margin: "0 0 4px" }} />
+      <div style={{ display: "flex", justifyContent: "space-around" }}>
+        {data.map((d, i) => <div key={i} style={{ fontSize: 10, color: "var(--c-hint)", textAlign: "center", flex: 1, padding: "0 1px" }}>{d.label}</div>)}
       </div>
     </div>
   );
@@ -457,12 +462,12 @@ function Gauge({ value, label, danger, warning }) {
 }
 
 function StatusBadge({ status, label }) {
-  const c = { good: { bg: "#e8f5e9", text: "#2e7d32", icon: "✓" }, warning: { bg: "#fff8e1", text: "#f57f17", icon: "⚠" }, danger: { bg: "#ffebee", text: "#c62828", icon: "✕" } }[status] || { bg: "#e8f5e9", text: "#2e7d32", icon: "✓" };
+  const c = { good: { bg: "#EDF2EE", text: "#4A6B5A", icon: "✓" }, warning: { bg: "#F9F3E6", text: "#9E7C2B", icon: "⚠" }, danger: { bg: "#F5E8E8", text: "#8B2020", icon: "✕" } }[status] || { bg: "#EDF2EE", text: "#4A6B5A", icon: "✓" };
   return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 20, background: c.bg, color: c.text, fontSize: 12, fontWeight: 700 }}>{c.icon} {label}</span>;
 }
 
 function PhasePill({ isWorking }) {
-  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 12px", borderRadius: 20, background: isWorking ? "#e3f2fd" : "#f3e5f5", color: isWorking ? "#1565c0" : "#7b1fa2", fontSize: 12, fontWeight: 700 }}>{isWorking ? "💼 Working" : "🌴 Retired"}</span>;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 12px", borderRadius: 20, background: isWorking ? "rgba(184,168,138,0.15)" : "rgba(184,168,138,0.25)", color: isWorking ? "#B8A88A" : "#B8A88A", fontSize: 12, fontWeight: 600 }}>{isWorking ? "💼 Working" : "🌴 Retired"}</span>;
 }
 
 // ============================================================
@@ -472,6 +477,11 @@ export default function FinancialModel() {
   const [p, setP] = useState(defaultProfile);
   const [view, setView] = useState("dashboard");
   const upd = useCallback((key, val) => setP(prev => ({ ...prev, [key]: val })), []);
+
+  // Chat state
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
 
   const isCurrentlyWorking = (p.age || 70) < (p.retirementAge || 75);
   const yearsUntilRetirement = Math.max(0, (p.retirementAge || 75) - (p.age || 70));
@@ -574,6 +584,56 @@ export default function FinancialModel() {
     return Math.round(wdSafe * 0.35 + fundSafe * 0.45 + cushSafe * 0.2);
   }, [main]);
 
+  // Build financial context for chat
+  const buildFinancialContext = useCallback(() => {
+    // Compact projection: only key milestone ages
+    const milestones = [];
+    const ages = new Set([p.age, p.retirementAge, p.ssStartAge, RMD_START_AGE, 80, 85, 90, p.planToAge]);
+    if (main.depletionAge) ages.add(main.depletionAge);
+    main.projection.forEach(d => { if (ages.has(d.age)) milestones.push(d); });
+
+    return `Financial planning assistant. Answer with specific numbers. Be concise and direct. Plain language for a non-technical user. 2-4 short paragraphs max.
+
+PROFILE: Age ${p.age}, plan to ${p.planToAge}. ${isCurrentlyWorking ? `Working, retires ${p.retirementAge}. Salary $${p.monthlySalary}/mo, saves ${p.savingsRatePercent}%.` : "Retired."}
+INCOME: SS $${p.socialSecurity}/mo from age ${p.ssStartAge}. Pension $${p.pension}/mo. Rental $${p.rentalIncome}/mo. Other $${p.otherIncome}/mo.
+ASSETS: Pre-tax $${p.preTaxAccounts} (RMDs age ${RMD_START_AGE}). Taxable $${p.taxableAccounts}. Liquid $${p.liquidSavings}. Total ${fmtFull(main.totalAssets)}. Return ${p.expectedReturn}%, inflation ${p.inflationRate}%.
+TAX: ${p.filingStatus}, ${p.effectiveTaxRate}% effective, ${main.projection[0]?.marginalBracket || 0}% marginal.
+EXPENSES: $${main.totalMonthlyBase}/mo ($${main.fixedMonthly} fixed, $${main.variableMonthly} variable). HC $${p.healthcare}/mo at ${p.useHealthcareInflation ? p.healthcareInflationRate : p.inflationRate}% inflation.
+METRICS: Income $${Math.round(main.currentMonthlyNet)}/mo net. Gap $${Math.round(main.monthlyGap)}/mo. Withdrawal ${main.withdrawalRate.toFixed(1)}%. Safety ${safetyScore}/100. ${main.depletionAge ? `DEPLETES AGE ${main.depletionAge}.` : `Funded. Ends ${fmtFull(main.wealthAtEnd)}.`} Cushion ${Math.round(main.cushionMonths)}mo.
+MILESTONES: ${milestones.map(d => `${d.age}:${fmtFull(d.wealth)}${d.rmd > 0 ? `/RMD${fmtFull(d.rmd)}` : ""}`).join(" | ")}${scenario ? `\nSCENARIO(${p.scenarioType}): ends ${fmtFull(scenario.wealthAtEnd)} vs ${fmtFull(main.wealthAtEnd)}, wd ${scenario.withdrawalRate.toFixed(1)}%` : ""}`;
+  }, [p, main, scenario, safetyScore, isCurrentlyWorking]);
+
+  // Send chat message
+  const sendChatMessage = useCallback(async (messageText) => {
+    const userMsg = messageText || chatInput.trim();
+    if (!userMsg || chatLoading) return;
+
+    const newMessages = [...chatMessages, { role: "user", content: userMsg }];
+    setChatMessages(newMessages);
+    setChatInput("");
+    setChatLoading(true);
+
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5-20251001",
+          max_tokens: 600,
+          system: buildFinancialContext(),
+          messages: newMessages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+        }),
+      });
+      const data = await response.json();
+      const assistantText = data.content?.map(c => c.type === "text" ? c.text : "").filter(Boolean).join("\n") || "Sorry, I couldn't process that. Please try again.";
+      setChatMessages(prev => [...prev, { role: "assistant", content: assistantText }]);
+    } catch (err) {
+      setChatMessages(prev => [...prev, { role: "assistant", content: "There was an error connecting. Please try again." }]);
+    } finally {
+      setChatLoading(false);
+    }
+  }, [chatInput, chatMessages, chatLoading, buildFinancialContext]);
+
   const tabStyle = (active) => ({
     padding: "10px 20px", borderRadius: 10, border: "none", cursor: "pointer",
     background: active ? "var(--c-accent)" : "transparent", color: active ? "#fff" : "var(--c-text)",
@@ -597,23 +657,23 @@ export default function FinancialModel() {
 
   return (
     <div style={{
-      "--c-bg": "#faf9f6", "--c-card": "#fff", "--c-text": "#1a1a1a", "--c-label": "#3a3a3a",
-      "--c-hint": "#8a8a82", "--c-border": "#e8e6e1", "--c-input-bg": "#f5f4f0",
-      "--c-accent": "#2d5a3d", "--c-accent-light": "#e8f0eb", "--c-bar": "#5a7d66",
-      "--c-danger": "#c0392b", "--c-warning": "#d4910a", "--c-safe": "#27804a",
-      "--c-scenario": "#1565c0",
-      "--font": "'Source Serif 4', Georgia, serif",
+      "--c-bg": "#F7F6F4", "--c-card": "#FFFFFF", "--c-text": "#1C1C28", "--c-label": "#2D2D3A",
+      "--c-hint": "#7A7A8C", "--c-border": "#E2E0DC", "--c-input-bg": "#F0EFEC",
+      "--c-accent": "#1C1C28", "--c-accent-light": "#EAEAE8", "--c-bar": "#B8A88A",
+      "--c-danger": "#8B2020", "--c-warning": "#9E7C2B", "--c-safe": "#4A6B5A",
+      "--c-scenario": "#B8A88A",
+      "--font": "'Montserrat', 'Helvetica Neue', Arial, sans-serif",
       fontFamily: "var(--font)", background: "var(--c-bg)", color: "var(--c-text)", minHeight: "100vh", padding: "0 0 40px",
     }}>
-      <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;0,8..60,700;0,8..60,800;1,8..60,400&display=swap" rel="stylesheet" />
+      <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
 
       {/* Header */}
-      <div style={{ background: "var(--c-accent)", padding: "24px 28px 20px", color: "#fff", borderRadius: "0 0 20px 20px" }}>
-        <div style={{ fontSize: 12, letterSpacing: 1.5, textTransform: "uppercase", opacity: 0.7, fontWeight: 600 }}>Financial Planning Model</div>
-        <div style={{ fontSize: 28, fontWeight: 800, marginTop: 4 }}>Your Money, Your Future</div>
-        <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+      <div style={{ background: "#1C1C28", padding: "24px 28px 20px", color: "#E8E4DE", borderRadius: "0 0 20px 20px" }}>
+        <div style={{ fontSize: 11, letterSpacing: 2.5, textTransform: "uppercase", color: "#B8A88A", fontWeight: 600 }}>Wealth Planning</div>
+        <div style={{ fontSize: 24, fontWeight: 700, marginTop: 6, color: "#F0EFEC", letterSpacing: -0.3 }}>Financial Planning Model</div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 10, flexWrap: "wrap" }}>
           <PhasePill isWorking={isCurrentlyWorking} />
-          <span style={{ fontSize: 13, opacity: 0.8 }}>
+          <span style={{ fontSize: 13, color: "#9A9AA8" }}>
             {isCurrentlyWorking ? `${yearsUntilRetirement}yr to retirement · ` : ""}Plan to age {p.planToAge}
           </span>
         </div>
@@ -621,7 +681,7 @@ export default function FinancialModel() {
 
       {/* Nav */}
       <div style={{ display: "flex", gap: 6, padding: "16px 20px 8px", flexWrap: "wrap" }}>
-        {[["dashboard","📊 Dashboard"],["inputs","✏️ Edit Numbers"],["whatif","🔮 What If"],["details","📋 Details"]].map(([k,l]) => (
+        {[["dashboard","📊 Dashboard"],["inputs","✏️ Edit Numbers"],["whatif","🔮 What If"],["details","📋 Details"],["chat","💬 Ask"]].map(([k,l]) => (
           <button key={k} style={tabStyle(view === k)} onClick={() => setView(k)}>{l}</button>
         ))}
       </div>
@@ -723,7 +783,7 @@ export default function FinancialModel() {
               {recs.map((r, i) => (
                 <div key={i} style={{
                   padding: "12px 16px", borderRadius: 10, marginBottom: 8,
-                  background: r.type === "danger" ? "#fff5f5" : r.type === "warning" ? "#fffbf0" : "#f0faf3",
+                  background: r.type === "danger" ? "#F5E8E8" : r.type === "warning" ? "#F9F3E6" : "#EDF2EE",
                   borderLeft: `4px solid ${r.type === "danger" ? "var(--c-danger)" : r.type === "warning" ? "var(--c-warning)" : "var(--c-safe)"}`,
                   fontSize: 13.5, lineHeight: 1.5,
                 }}>{r.text}</div>
@@ -900,10 +960,10 @@ export default function FinancialModel() {
                   </thead>
                   <tbody>
                     {main.projection.filter((_, i) => i % (main.projection.length > 20 ? Math.ceil(main.projection.length / 18) : 1) === 0 || _ === main.projection[main.projection.length - 1]).map((d, i) => (
-                      <tr key={i} style={{ borderBottom: "1px solid var(--c-border)", background: d.wealth < 0 ? "#fff5f5" : d.phase === "working" ? "#f8fbff" : "transparent" }}>
+                      <tr key={i} style={{ borderBottom: "1px solid var(--c-border)", background: d.wealth < 0 ? "#F5E8E8" : d.phase === "working" ? "#F7F6F4" : "transparent" }}>
                         <td style={{ padding: "9px 8px", textAlign: "right", fontWeight: 700 }}>{d.age}</td>
                         <td style={{ padding: "9px 8px", textAlign: "left" }}>
-                          <span style={{ padding: "2px 7px", borderRadius: 6, background: d.phase === "working" ? "#e3f2fd" : "#f3e5f5", color: d.phase === "working" ? "#1565c0" : "#7b1fa2", fontWeight: 600, fontSize: 10.5 }}>
+                          <span style={{ padding: "2px 7px", borderRadius: 6, background: d.phase === "working" ? "#EAEAE8" : "#E2E0DC", color: d.phase === "working" ? "#1C1C28" : "#7A7A8C", fontWeight: 600, fontSize: 10.5 }}>
                             {d.phase === "working" ? "Work" : "Ret"}
                           </span>
                         </td>
@@ -943,6 +1003,124 @@ export default function FinancialModel() {
               This model is for planning purposes only and does not constitute financial advice.<br />
               Consult a qualified financial advisor before making major financial decisions.
             </div>
+          </div>
+        )}
+
+        {/* ===================== CHAT ===================== */}
+        {view === "chat" && (
+          <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 200px)", minHeight: 400 }}>
+            {/* Chat header */}
+            <div style={{ marginBottom: 12, marginTop: 8 }}>
+              <div style={{ fontSize: 16, fontWeight: 700 }}>Ask About Your Plan</div>
+              <div style={{ fontSize: 13, color: "var(--c-hint)", marginTop: 2 }}>
+                Get specific answers based on your numbers. The advisor sees your full financial picture.
+              </div>
+            </div>
+
+            {/* Starter questions (shown when no messages) */}
+            {chatMessages.length === 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: "var(--c-hint)", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5 }}>Suggested questions</div>
+                {[
+                  "What's my biggest financial risk right now?",
+                  "Can I afford to spend more each month?",
+                  "What happens if I work 2 more years?",
+                  "How much will healthcare cost me at age 85?",
+                  "When do my RMDs start and how much will they be?",
+                  "Should I be worried about running out of money?",
+                ].map((q, i) => (
+                  <button key={i} onClick={() => sendChatMessage(q)} style={{
+                    textAlign: "left", padding: "12px 16px", borderRadius: 10,
+                    border: "1px solid var(--c-border)", background: "var(--c-card)",
+                    cursor: "pointer", fontSize: 13.5, color: "var(--c-text)",
+                    fontFamily: "var(--font)", transition: "all .15s",
+                    lineHeight: 1.4,
+                  }}
+                  onMouseEnter={e => { e.target.style.background = "var(--c-input-bg)"; e.target.style.borderColor = "var(--c-accent)"; }}
+                  onMouseLeave={e => { e.target.style.background = "var(--c-card)"; e.target.style.borderColor = "var(--c-border)"; }}
+                  >{q}</button>
+                ))}
+              </div>
+            )}
+
+            {/* Messages */}
+            <div style={{
+              flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 12,
+              paddingBottom: 12,
+            }}>
+              {chatMessages.map((m, i) => (
+                <div key={i} style={{
+                  display: "flex", flexDirection: "column",
+                  alignItems: m.role === "user" ? "flex-end" : "flex-start",
+                }}>
+                  <div style={{ fontSize: 10, color: "var(--c-hint)", fontWeight: 600, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.5 }}>
+                    {m.role === "user" ? "You" : "Advisor"}
+                  </div>
+                  <div style={{
+                    maxWidth: "88%", padding: "12px 16px", borderRadius: 14,
+                    background: m.role === "user" ? "#1C1C28" : "var(--c-card)",
+                    color: m.role === "user" ? "#E8E4DE" : "var(--c-text)",
+                    border: m.role === "user" ? "none" : "1px solid var(--c-border)",
+                    fontSize: 13.5, lineHeight: 1.6, whiteSpace: "pre-wrap",
+                  }}>
+                    {m.content}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div style={{ display: "flex", alignItems: "flex-start", flexDirection: "column" }}>
+                  <div style={{ fontSize: 10, color: "var(--c-hint)", fontWeight: 600, marginBottom: 3, textTransform: "uppercase", letterSpacing: 0.5 }}>Advisor</div>
+                  <div style={{
+                    padding: "12px 16px", borderRadius: 14, background: "var(--c-card)",
+                    border: "1px solid var(--c-border)", fontSize: 13.5, color: "var(--c-hint)",
+                  }}>
+                    <span style={{ display: "inline-flex", gap: 4 }}>
+                      <span style={{ animation: "pulse 1.2s ease-in-out infinite" }}>●</span>
+                      <span style={{ animation: "pulse 1.2s ease-in-out 0.2s infinite" }}>●</span>
+                      <span style={{ animation: "pulse 1.2s ease-in-out 0.4s infinite" }}>●</span>
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Input area */}
+            <div style={{
+              display: "flex", gap: 8, padding: "12px 0 4px",
+              borderTop: "1px solid var(--c-border)",
+            }}>
+              <input
+                type="text"
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChatMessage(); } }}
+                placeholder="Ask a question about your financial plan..."
+                style={{
+                  flex: 1, padding: "12px 16px", borderRadius: 10,
+                  border: "2px solid var(--c-border)", background: "var(--c-input-bg)",
+                  fontSize: 14, fontFamily: "var(--font)", color: "var(--c-text)",
+                  outline: "none",
+                }}
+                onFocus={e => e.target.style.borderColor = "var(--c-accent)"}
+                onBlur={e => e.target.style.borderColor = "var(--c-border)"}
+              />
+              <button
+                onClick={() => sendChatMessage()}
+                disabled={chatLoading || !chatInput.trim()}
+                style={{
+                  padding: "12px 20px", borderRadius: 10, border: "none",
+                  background: chatLoading || !chatInput.trim() ? "var(--c-border)" : "#1C1C28",
+                  color: chatLoading || !chatInput.trim() ? "var(--c-hint)" : "#E8E4DE",
+                  fontWeight: 700, fontSize: 14, cursor: chatLoading ? "wait" : "pointer",
+                  fontFamily: "var(--font)", transition: "all .15s",
+                }}
+              >
+                Send
+              </button>
+            </div>
+
+            {/* Pulse animation */}
+            <style>{`@keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }`}</style>
           </div>
         )}
       </div>
