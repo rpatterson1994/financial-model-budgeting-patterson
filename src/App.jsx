@@ -756,7 +756,7 @@ function Gauge({ value, label, danger, warning }) {
 // ============================================================
 function AccessGate({ onUnlock }) {
   const [step, setStep] = useState(1);
-  const [email, setEmail] = useState("advisor@ieqcapital.com");
+  const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [issuedCode, setIssuedCode] = useState("");
   const [error, setError] = useState("");
@@ -783,7 +783,7 @@ function AccessGate({ onUnlock }) {
       onUnlock(email);
       return;
     }
-    setError("Incorrect code. Use the mock code shown below.");
+    setError("Incorrect passcode. Use the mock code shown below.");
   };
 
   return (
@@ -801,12 +801,32 @@ function AccessGate({ onUnlock }) {
           {step === 1 && (
             <>
               <div style={{ fontSize: 14, color: IEQ.textMid, lineHeight: 1.6, marginBottom: 18 }}>
-                Enter your email to receive a temporary one-time access code.
+                Enter your email address below to receive a one-time passcode and access the portal.
               </div>
-              <TextInput label="Email Address" value={email} onChange={setEmail} placeholder="you@example.com" />
+              <TextInput
+                label="Email Address"
+                value={email}
+                onChange={setEmail}
+                placeholder="name@example.com"
+                hint="Each user can enter their own email address"
+              />
               {error && <div style={{ marginBottom: 12, color: IEQ.danger, fontSize: 12.5 }}>{error}</div>}
-              <button onClick={sendCode} style={{ width: "100%", padding: "14px 18px", borderRadius: 2, border: "none", background: IEQ.navy, color: IEQ.white, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Georgia, serif" }}>
-                Send One-Time Code
+              <button
+                onClick={sendCode}
+                style={{
+                  width: "100%",
+                  padding: "14px 18px",
+                  borderRadius: 2,
+                  border: "none",
+                  background: IEQ.navy,
+                  color: IEQ.white,
+                  fontSize: 14,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  fontFamily: "Georgia, serif"
+                }}
+              >
+                Send One-Time Passcode
               </button>
             </>
           )}
@@ -814,14 +834,14 @@ function AccessGate({ onUnlock }) {
           {step === 2 && (
             <>
               <div style={{ fontSize: 14, color: IEQ.textMid, lineHeight: 1.6, marginBottom: 16 }}>
-                A one-time code was sent to <strong>{maskedEmail}</strong>.
+                A one-time passcode was sent to <strong>{maskedEmail}</strong>.
               </div>
 
               <div style={{ marginBottom: 16, padding: "12px 14px", borderRadius: 2, background: IEQ.infoBg, border: `1px solid ${IEQ.borderLight}`, fontSize: 12.5, color: IEQ.navy }}>
-                <strong>Mock flow only:</strong> use this code to enter the portal: <span style={{ fontFamily: "monospace", fontSize: 14 }}>{issuedCode}</span>
+                <strong>Mock flow only:</strong> in a real build this passcode would be emailed to the address entered above. For now, use this temporary code: <span style={{ fontFamily: "monospace", fontSize: 14 }}>{issuedCode}</span>
               </div>
 
-              <TextInput label="One-Time Code" value={code} onChange={setCode} placeholder="6-digit code" />
+              <TextInput label="One-Time Passcode" value={code} onChange={setCode} placeholder="6-digit passcode" />
               {error && <div style={{ marginBottom: 12, color: IEQ.danger, fontSize: 12.5 }}>{error}</div>}
 
               <div style={{ display: "flex", gap: 10 }}>
